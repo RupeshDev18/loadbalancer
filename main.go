@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"os"
 )
 
@@ -49,16 +50,39 @@ func handleErr(err error) {
 		os.Exit(1)
 	}
 }
+func (s *simpleServer) Address() string {
+	return s.addr
+}
+func (s *simpleServer) IsAlive() bool { return true }
 
-func (lb *LoadBalancer) getNextAvailableServer() Server {}
+func (s *simpleServer) Serve(rw http.ResponseWriter, r *http.Request) {
+	s.proxy.ServeHTTP(rw, r)
+}
 
-func (lb *LoadBalancer) serveProxy(rw http.ResponseWriter, r *http.Request) {}
+func (lb *LoadBalancer) getNextAvailableServer() Server {
+
+	server := lb.servers[lb.RoundRobinCount%len(lb.servers)]
+	for !server.IsAlive() {
+		lb.RoundRobinCount++
+		server = lb.servers[lb.RoundRobinCount%len(lb.servers)]
+	}
+	lb.RoundRobinCount++
+	return server
+
+}
+
+func (lb *LoadBalancer) serveProxy(rw http.ResponseWriter, r *http.Request) {
+	targetServer := lb.getNextAvailableServer()
+	fmt.Printf("forwarding request to address %q \n", targetServer.Address())
+	targetServer.Serve(rw, r)
+}
 
 func main() {
 	servers := []Server{
 		newSimpleServer("https://www.facebook.com"),
 		newSimpleServer("https://www.bing.com"),
 		newSimpleServer("https://www.duckduckgo.com"),
+		newSimpleServer("https://www.google.com"),
 	}
 	lb := NewLoadBalancer("8000", servers)
 	handleRedirect := func(rw http.ResponseWriter, r *http.Request) {
